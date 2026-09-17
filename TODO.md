@@ -1,0 +1,76 @@
+# 待办事项
+- [x] 1. 文件落地，选择文件和保存文件可以落地。
+  - [x] 1.1 发送端接入 file_picker 系统文件选择器（替换测试文件按钮）
+  - [x] 1.2 接收端文件持久化落地到 `<Documents>/p2p_received`（原临时目录会被系统清理）
+  - [x] 1.3 重名文件自动追加时间戳后缀，避免覆盖
+  - [x] 1.4 UI 展示落地目录与每个已接收文件的保存路径
+- [x] bug修复，电脑1启动，无线网卡发wifi，电脑2连上后启动，电脑2可以发现电脑1，电脑1发现不了电脑2。
+  - [x] 2.1 根因：`_detectNetwork()` 只取第一张非回环 IPv4 网卡的 C 段，开热点的主机有多张网卡时会漏掉热点网段（如 192.168.137.x），扫错 /24 → 单向发现
+  - [x] 2.2 改为收集所有非回环 IPv4 网段并全部扫描；跳过所有本机 IP（而非单个）
+  - [x] 2.3 每轮扫描重新探测网卡，适配热点/网卡在 App 启动后才上线的场景
+  - [x] 2.4 新增 `_scanning` 防重入，多网段扫描超过 5s 周期时避免扫描任务堆积
+- [x] 3. 已接收文件点击后打开对应文件目录
+- [x] 4. bug修复，传输pdf等文件，报错Invalid HTTP header field value,要求所有文件都可以传输
+  - [x] 4.1 根因：`sendFile` 把原始文件名直接写入 HTTP header `x-file-name`，文件名含中文/emoji 等非 ASCII 字符时，Dart `HttpClient` 校验 header 值只允许 ASCII，抛出 `FormatException: Invalid HTTP header field value`
+  - [x] 4.2 发送端 `Uri.encodeComponent(fileName)` 编码（纯 ASCII，合法 header 值）；接收端 `Uri.decodeComponent` 对称解码还原原始文件名，解码失败回退原值
+  - [x] 4.3 `FileTransferService` 端口改为可注入（默认 9877 不变），新增集成测试 `test/file_transfer_header_test.dart` 驱动真实 `start()`+`sendFile` 回环传输中文文件名 PDF
+  - [x] 4.4 验证：`flutter analyze` 0 问题 + `flutter test` 全绿 + `flutter build windows --debug` 通过
+  - [x] 5. 新增功能，双方可以设置工作文件夹，工作文件夹中的文件进行完全同步。
+   - [x] 5.1 新增 FolderSyncService：设置文件夹、watch 实时监听 + 去抖、双向 reconcile、回声抑制、冲突取新者胜、路径安全
+   - [x] 5.2 FileTransferService 新增 POST /sync、GET /sync-manifest 端点与 pushSyncFile / fetchSyncManifest 传输方法
+   - [x] 5.3 TransferState 装配同步服务：peer 变化驱动 reconcile、暴露 workingFolder / syncStatus / setWorkingFolder / openWorkingFolder
+   - [x] 5.4 UI 新增「工作文件夹同步」面板（file_picker getDirectoryPath 选目录 + 状态展示 + 取消/打开目录）
+   - [x] 5.5 集成测试 test/folder_sync_test.dart：双向收敛 + mtime 保留 + 无回环 + 冲突收敛
+   - [x] 5.6 验证 flutter analyze 0 问题 + flutter test 全绿 + flutter build windows --debug
+   - [x] 5.7 更新 README.md 记录任务 5 架构与限制
+- [x] 6. 功能扩展，需要支持andorid端文件传输和文件夹同步（默认程序可读写的目录，不用选择）
+  - [x] 6.1 AndroidManifest 添加 `android:usesCleartextTraffic="true"`（Android 9+ 默认禁止明文 HTTP，不加则局域网发现/传输/同步全部失败）
+  - [x] 6.2 新增 AppDirsService：默认工作文件夹 = `<Documents>/p2p_sync`（Android 上即 App 专属外部存储，默认可读写、系统文件管理器可见），文档目录不可用降级临时目录
+  - [x] 6.3 TransferState 新增 `isAndroid` + `enableDefaultSync()`（Android 用默认目录开启同步，无需选择）
+  - [x] 6.4 FolderSyncPanel Android 分支：「使用默认目录同步」按钮替代目录选择器；隐藏「打开目录」（移动端无目录管理器）；桌面端行为不变
+  - [x] 6.5 集成测试 test/android_default_dirs_test.dart：默认目录解析 + 降级路径
+  - [x] 6.6 验证 flutter analyze 0 问题 + flutter test 全绿 + flutter build windows --debug 通过；移除失效的模板 widget_test.dart
+  - [x] 6.7 更新 README.md 记录 Android 支持架构
+- [x] 7. Android 三个问题修复：同步路径换行显示 + 点击路径打开文件夹 + 后台运行支持
+  - [x] 7.1 同步路径 `maxLines: 1` 改为 3 行换行显示，路径文本可点击 → `openWorkingFolder()` 打开目录
+  - [x] 7.2 Kotlin `MainActivity` 新增 MethodChannel `p2p_transfer`：`openDirectory` 用 `ACTION_VIEW` + `vnd.android.dir` 拉起系统文件管理器（无处理器时 SAF `ACTION_GET_CONTENT` 兜底）；`start/stopBackgroundService`
+  - [x] 7.3 Kotlin `P2pBackgroundService` 前台服务保活（持久通知 + START_STICKY）；Manifest 声明 `foregroundServiceType="dataSync"` + `POST_NOTIFICATIONS` / `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` 权限
+  - [x] 7.4 Dart 新增 `android_platform_service.dart`：Android 走通道打开目录/后台保活；非 Android 打开目录回退 `OpenDirService`、后台服务 no-op
+  - [x] 7.5 `TransferState` 接线：`openReceivedFileDir`/`openWorkingFolder`/新增 `openReceivedDir` 统一走平台桥；`init()` 启动前台服务、`disposeAll()` 停止；home_page「保存到: 目录」可点击
+  - [x] 7.6 测试 test/android_platform_service_test.dart（非 Android no-op 行为）；验证 flutter analyze 0 问题 + flutter test 7/7 全绿 + flutter build windows --debug 通过
+  - [x] 7.7 更新 README.md 记录 Android 平台桥与前台服务架构
+- [x] 8. Android 16 真机部署与修复（V2507A）
+  - [x] 8.1 APK 构建部署：Kotlin `MethodCall.argument` 新 API 修复（`argument(String name)`，Dart 侧改传 `{'path': dir}` Map）
+  - [x] 8.2 FileUriExposedException：Android 7+ 禁止 Intent 暴露 file:// URI → 打开目录改用 SAF 目录选择器（`ACTION_OPEN_DOCUMENT` + `vnd.android.dir`，`GET_CONTENT` 兜底）
+  - [x] 8.3 Android 上 `getApplicationDocumentsDirectory()` 实际返回内部存储（`/data/user/0/.../app_flutter`）→ 接收/同步目录改用 `getExternalStorageDirectories()`（外部存储 `Android/data/<pkg>/files`，文件管理器可见），已验证 `p2p_received`/`p2p_sync` 落地外部存储
+  - [x] 8.4 `Directory.watch(recursive: true)` 在 Android/iOS 断言失败（multiplexing watcher 不支持递归）→ 移动端 `recursive: false`，子目录由周期 reconcile（递归全量扫描）兜底
+  - [x] 8.5 真机验证：前台服务 `isForeground=true`（channel=p2p_background, ONGOING）+ 发现/传输正常运行 + 日志无 FileUriExposed/断言异常 + flutter analyze 0 问题 + flutter test 7/7 全绿
+  - [ ] 8.6 真机最终确认：点击「使用默认目录同步」与「打开目录」/已接收文件行，观察文件管理器弹出与同步状态
+- [x] 9. Android 端支持选择外部同步文件夹（MANAGE_EXTERNAL_STORAGE 方案）
+  - [x] 9.1 Kotlin 新增 `hasAllFilesAccess`（API 30+ `Environment.isExternalStorageManager()`，低版本恒 true）与 `requestAllFilesAccess`（打开「所有文件访问」设置页，无处理器时降级通用设置）
+  - [x] 9.2 Dart 平台服务 `hasAllFilesAccess()` / `requestAllFilesAccess()`（非 Android no-op）+ `AppDirsService.isWritable()` 探针校验
+  - [x] 9.3 UI 新增 `lib/ui/android_folder_sheet.dart` 底部弹窗：快捷目录（Download/Documents/Pictures）+ 自定义路径输入 + 权限授予按钮 + 可写校验；`folder_sync_panel.dart` Android 未开启态新增「选择外部文件夹」入口
+  - [x] 9.4 质量门：flutter analyze 0 问题 + flutter test 9/9 全绿（新增 2 个权限方法 no-op 测试）+ APK 构建成功
+  - [ ] 9.5 真机验证：设备重连后安装新版，授予「所有文件访问」→ 选 Download → 验证外部目录同步生效
+- [x] 10. Android 后台挂起问题：根因定位 + 保活增强
+  - [x] 10.1 真机复现：HOME 键退后台后 6.7 分钟进程存活（前台服务 isForeground=true）但 Dart 日志完全停止；回前台瞬间自动恢复、设备列表自动重发现 → ROM 级「后台进程挂起」（非网络限制、非代码 bug）
+  - [x] 10.2 保活方案：Kotlin 新增 `hasBatteryOptExempted`（`PowerManager.isIgnoringBatteryOptimizations`）/ `requestBatteryOptExemption`（`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 系统对话框）；面板新增 `_AndroidKeepAliveRow`（Android 常驻显示豁免状态 + 「授予保活」按钮）
+  - [ ] 10.3 验证：用户授予豁免 → HOME 退后台 2~3 分钟 → 发现循环须持续运行；若仍挂起，指导用户开启 Vivo「设置→电池→后台应用行为管理→不限制」+ 自启动
+- [x] 11. Android 外部文件夹同步失败修复（watch 断言降级）
+  - [x] 11.1 根因：真机 logcat 显示「选择外部文件夹」→ `setFolder` → `_startWatch` 触发 `file_patch.dart:522` 断言（inotify pathId 复用，非 recursive 也发生）；异常中断 `setFolder` → reconcile 定时器从未启动 → 同步完全未生效（UI 停留「未开启」）
+  - [x] 11.2 修复：watch 失败改为非致命——`setFolder` try/catch 捕获后降级为 10s 周期 reconcile（`_reconcileFallbackInterval`），`_watchActive` 状态 + 状态文案「周期同步(监听不可用)」；桌面端行为不变
+  - [x] 11.3 质量门：flutter analyze 0 问题 + flutter test 11/11 全绿 + APK 已安装部署
+  - [ ] 11.4 真机验证：用户重选外部文件夹 → 面板显示「周期同步(监听不可用)」→ 新增文件 → 10s 内同步到桌面端
+- [x] 12. 「授予所有文件权限点了没用」+ 手机→桌面同步失败修复
+  - [x] 12.1 根因 A（点了没用）：sheet「授予」按钮打开系统设置页后 Dart 立即重查权限（App 尚未回前台）→ UI 仍显示未授予 → 用户感知「点了没用」。改为 App resumed 时（WidgetsBindingObserver）自动重查 + SnackBar 反馈结果
+  - [x] 12.2 根因 B（同步失效）：选择外部目录未通过可写校验时文件夹**没有切换**（静默停留在旧值/未开启），用户以为已切换。真机 manifest 实测 `folder: null` 证实同步根本没开启；错误文案改为三步明确指引
+  - [x] 12.3 Android 一律跳过 Directory.watch（真机证明 VM 断言后订阅静默死亡、_watchActive 状态不可信），确定性降级 10s 周期 reconcile；桌面端保留 watch
+  - [x] 12.4 manifest 新增 `folder` 字段 + 同步面板展示「对端 {ip} 同步目录: …」——两端互相可见对方同步的文件夹，消除「我在同步哪个文件夹」盲区
+  - [x] 12.5 质量门：flutter analyze 0 问题 + flutter test 11/11 全绿 + APK 已安装 + Windows exe 已构建
+  - [ ] 12.6 真机验证：用户授予「所有文件访问」（设置页开关必须真的打开）→ 选 Download → 面板显示「周期同步(监听不可用)」+ 桌面端同步目录 → 手机放文件 → 10s 内到桌面
+- [x] 13. 「授权后闪退」修复（大文件 OOM）
+  - [x] 13.1 根因：授予权限后选 Download → reconcile 全量扫描 Download，`readAsBytes()` 整文件载入堆 → 大文件触发 Dart VM OOM（Android 进程级致命崩溃；logcat 佐证 `std::bad_alloc` SIGABRT + 进程 1 秒 uptime 崩溃记录）
+  - [x] 13.2 修复：`FolderSyncService.maxSyncFileSize`（Android 100MB / 桌面 1GB）——推送端超限跳过并计入状态「跳过 N 个超大文件」；接收端 `POST /sync` 超限直接 413 拒收（不读 body）
+  - [x] 13.3 质量门：analyze 0 问题 + test 11/11 + APK/Windows 已构建部署
+  - [ ] 13.4 真机验证：选 Download 不再闪退；面板出现「跳过 N 个超大文件」（若 Download 有 >100MB 文件）
+- [ ] 14. 网络前置条件：16:35 实测手机 IP 10.128.235.43、桌面 WLAN 192.168.137.222 —— **两端不在同一局域网**，发现/同步必然失败；须先把两端接入同一 Wi-Fi

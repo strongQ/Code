@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 将以下 key 合并到 ios/Runner/Info.plist -->
+<!--
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>用于发现局域网内的其他设备</string>
+  <key>NSBonjourServices</key>
+  <array>
+      <string>_p2pfile._tcp</string>
+  </array>
+-->
